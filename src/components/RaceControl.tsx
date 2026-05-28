@@ -1,6 +1,6 @@
 "use client";
 
-import type { Room } from "@/lib/client";
+import type { Room } from "@/lib/data";
 import { STRATEGIES, STRATEGY_BY_ID } from "@/lib/strategies/descriptions";
 import type { StrategyId } from "@/lib/strategies/types";
 import { formatSlotLabel, todayBase } from "@/lib/time";

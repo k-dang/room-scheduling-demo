@@ -1,6 +1,6 @@
 "use client";
 
-import type { Room, RunRow } from "@/lib/client";
+import type { Room, RunRow } from "@/lib/data";
 import { STRATEGY_BY_ID } from "@/lib/strategies/descriptions";
 import { formatInZone } from "@/lib/time";
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { formatInTimeZone } from "date-fns-tz";
-import type { Room, Doctor } from "@/lib/client";
+import { bookSlot } from "@/lib/actions";
+import type { Room, Doctor } from "@/lib/data";
 import { formatSlotLabel, slotEnd, todayBase, tzAbbreviation } from "@/lib/time";
 
 interface Props {
@@ -21,7 +22,7 @@ export function BookingPanel({
   onBooked,
 }: Props) {
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -48,32 +49,22 @@ export function BookingPanel({
 
   const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId);
 
-  const handleBook = async () => {
+  const handleBook = () => {
     if (!selectedDoctorId) return;
-    setLoading(true);
     setError(null);
-    try {
-      const res = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          room_id: selectedSlot.roomId,
-          doctor_id: selectedDoctorId,
-          slot_index: selectedSlot.slotIndex,
-        }),
+    startTransition(async () => {
+      const res = await bookSlot({
+        roomId: selectedSlot.roomId,
+        doctorId: selectedDoctorId,
+        slotIndex: selectedSlot.slotIndex,
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Failed to book slot.");
+        setError(res.error);
         return;
       }
       setSuccess(true);
       setTimeout(() => onBooked(), 900);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error");
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const handleClose = () => {
@@ -446,19 +437,19 @@ export function BookingPanel({
             <button
               type="button"
               onClick={handleBook}
-              disabled={!selectedDoctorId || loading}
+              disabled={!selectedDoctorId || pending}
               style={{
                 width: "100%",
                 height: 48,
                 borderRadius: 10,
                 background:
-                  selectedDoctorId && !loading
+                  selectedDoctorId && !pending
                     ? selectedDoctor?.color ?? "#0F766E"
                     : "#E5E7EB",
-                color: selectedDoctorId && !loading ? "#fff" : "#9CA3AF",
+                color: selectedDoctorId && !pending ? "#fff" : "#9CA3AF",
                 border: "none",
                 cursor:
-                  selectedDoctorId && !loading ? "pointer" : "not-allowed",
+                  selectedDoctorId && !pending ? "pointer" : "not-allowed",
                 fontSize: 15,
                 fontWeight: 700,
                 letterSpacing: "-0.01em",
@@ -469,7 +460,7 @@ export function BookingPanel({
                 gap: 8,
               }}
             >
-              {loading ? (
+              {pending ? (
                 <>
                   <Spinner />
                   Booking...

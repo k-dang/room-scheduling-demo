@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { BookingRow, Doctor, Room } from "@/lib/client";
+import type { BookingRow, Doctor, Room } from "@/lib/data";
 import { SLOTS_PER_DAY, formatSlotLabel, slotEnd, slotStart, todayBase } from "@/lib/time";
 
 interface Cell {
