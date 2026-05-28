@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/db";
-import { slotStart, slotEnd, todayBase, SLOTS_PER_DAY } from "@/lib/time";
+import { SLOTS_PER_DAY, slotEnd, slotStart, todayBase } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid slot index" }, { status: 400 });
   }
 
-  const base = todayBase();
+  const [room] = (await sql`
+    SELECT timezone FROM room_scheduling.rooms WHERE id = ${room_id}
+  `) as { timezone: string }[];
+  if (!room) {
+    return NextResponse.json({ error: "Unknown room" }, { status: 404 });
+  }
+
+  // The slot's wall-clock window is anchored to the room's timezone — never the
+  // server's. Stored as UTC; only the venue's tz determines what "08:00" means.
+  const base = todayBase(room.timezone);
   const startsAt = slotStart(slot_index, base).toISOString();
   const endsAt = slotEnd(slot_index, base).toISOString();
 

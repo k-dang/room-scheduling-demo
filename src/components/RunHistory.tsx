@@ -2,7 +2,7 @@
 
 import type { Room, RunRow } from "@/lib/client";
 import { STRATEGY_BY_ID } from "@/lib/strategies/descriptions";
-import { slotIndexOf, formatSlotLabel } from "@/lib/time";
+import { formatInZone } from "@/lib/time";
 
 interface Props {
   runs: RunRow[];
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function RunHistory({ runs, rooms }: Props) {
-  const roomNameById = new Map(rooms.map((r) => [r.id, r.name] as const));
+  const roomById = new Map(rooms.map((r) => [r.id, r] as const));
 
   if (runs.length === 0) {
     return (
@@ -42,7 +42,8 @@ export function RunHistory({ runs, rooms }: Props) {
           {runs.map((r) => {
             const meta = STRATEGY_BY_ID[r.strategy];
             const overbooked = r.persistedOnSlot > 1;
-            const slotIdx = slotIndexOf(r.startsAt);
+            const room = roomById.get(r.roomId);
+            const tz = room?.timezone ?? "UTC";
             return (
               <tr
                 key={r.id}
@@ -64,8 +65,8 @@ export function RunHistory({ runs, rooms }: Props) {
                 </Td>
                 <Td>
                   <span className="font-mono text-xs text-zinc-500">
-                    {roomNameById.get(r.roomId) ?? `room ${r.roomId}`} @{" "}
-                    {formatSlotLabel(slotIdx)}
+                    {room?.name ?? `room ${r.roomId}`} @{" "}
+                    {formatInZone(r.startsAt, tz, "HH:mm zzz")}
                   </span>
                 </Td>
                 <Td align="right" mono>

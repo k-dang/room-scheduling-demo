@@ -7,7 +7,7 @@ import { BookingCalendar } from "@/components/BookingCalendar";
 import { BookingPanel } from "@/components/BookingPanel";
 import { fetchSchedule } from "@/lib/client";
 import type { ScheduleState } from "@/lib/client";
-import { SLOTS_PER_DAY, slotIndexOf, todayBase } from "@/lib/time";
+import { SLOTS_PER_DAY, slotIndexOf, todayBase, tzAbbreviation } from "@/lib/time";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -39,31 +39,31 @@ export default function HomePage() {
     refresh();
   }, [refresh]);
 
-  const todayStr = useMemo(() => new Date().toDateString(), []);
-
-  const todayBookings = useMemo(() => {
-    if (!state) return [];
-    return state.bookingsExcl.filter(
-      (b) => new Date(b.startsAt).toDateString() === todayStr,
-    );
-  }, [state, todayStr]);
+  // Each room defines its own "today" because its timezone differs. Pre-compute
+  // a base instant per room so the calendar can filter bookings against the
+  // right wall-clock day.
+  const roomBases = useMemo(() => {
+    if (!state) return new Map<number, Date>();
+    return new Map(state.rooms.map((r) => [r.id, todayBase(r.timezone)] as const));
+  }, [state]);
 
   const stats = useMemo(() => {
     if (!state) return null;
     const totalSlots = state.rooms.length * SLOTS_PER_DAY;
-    const base = todayBase();
-    const bookedSet = new Set(
-      todayBookings
-        .map((b) => `${b.roomId}:${slotIndexOf(b.startsAt, base)}`)
-        .filter((k) => !k.endsWith(":-") && !k.includes("NaN")),
-    );
+    const bookedSet = new Set<string>();
+    for (const b of state.bookingsExcl) {
+      const base = roomBases.get(b.roomId);
+      if (!base) continue;
+      const si = slotIndexOf(b.startsAt, base);
+      if (si < 0 || si >= SLOTS_PER_DAY) continue;
+      bookedSet.add(`${b.roomId}:${si}`);
+    }
     return {
       total: totalSlots,
       booked: bookedSet.size,
       available: totalSlots - bookedSet.size,
     };
-  }, [todayBookings, state]);
-
+  }, [state, roomBases]);
 
   const dateLabel = useMemo(
     () =>
@@ -74,6 +74,12 @@ export default function HomePage() {
       }),
     [],
   );
+
+  const tzSummary = useMemo(() => {
+    if (!state) return null;
+    const zones = [...new Set(state.rooms.map((r) => r.timezone))];
+    return zones.map((z) => ({ zone: z, abbr: tzAbbreviation(z) }));
+  }, [state]);
 
   const handleBooked = useCallback(async () => {
     setSelectedSlot(null);
@@ -348,10 +354,13 @@ export default function HomePage() {
           <CalendarSkeleton roomCount={4} />
         ) : state ? (
           <>
+            {tzSummary && tzSummary.length > 0 && (
+              <TimezoneStrip zones={tzSummary} />
+            )}
             <BookingCalendar
               rooms={state.rooms}
               doctors={state.doctors}
-              bookings={todayBookings}
+              bookings={state.bookingsExcl}
               selectedSlot={selectedSlot}
               onSlotClick={(roomId, slotIndex) =>
                 setSelectedSlot((cur) =>
@@ -525,6 +534,69 @@ function CalendarLegend() {
     >
       <LegendItem color="#5EEAD4" bg="#F0FDFA" label="Available — click to book" />
       <LegendItem color="#9CA3AF" bg="#F3F4F6" label="Booked" />
+    </div>
+  );
+}
+
+function TimezoneStrip({
+  zones,
+}: {
+  zones: { zone: string; abbr: string }[];
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 12,
+        padding: "10px 14px",
+        background: "#fff",
+        border: "1px solid #E5E7EB",
+        borderRadius: 10,
+        fontSize: 12,
+        color: "#374151",
+      }}
+    >
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0D9488"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+      <span style={{ fontWeight: 600, color: "#0F766E" }}>
+        Times shown in each clinic&apos;s local timezone
+      </span>
+      <span style={{ color: "#9CA3AF" }}>·</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {zones.map((z) => (
+          <span
+            key={z.zone}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              background: "#F0FDFA",
+              border: "1px solid #CCFBF1",
+              borderRadius: 6,
+              padding: "2px 8px",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 11,
+              color: "#0F766E",
+            }}
+          >
+            <strong style={{ fontWeight: 700 }}>{z.abbr}</strong>
+            <span style={{ color: "#0D9488", opacity: 0.8 }}>{z.zone}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

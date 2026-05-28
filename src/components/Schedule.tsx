@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { BookingRow, Doctor, Room } from "@/lib/client";
-import { SLOTS_PER_DAY, formatSlotLabel, slotEnd, slotStart } from "@/lib/time";
+import { SLOTS_PER_DAY, formatSlotLabel, slotEnd, slotStart, todayBase } from "@/lib/time";
 
 interface Cell {
   roomId: number;
@@ -30,6 +30,12 @@ export function Schedule({
     [doctors],
   );
 
+  // Per-room base — each room's "08:00 today" lives in its own timezone.
+  const baseByRoom = useMemo(
+    () => new Map(rooms.map((r) => [r.id, todayBase(r.timezone)] as const)),
+    [rooms],
+  );
+
   const cells = useMemo(() => {
     const grid = new Map<string, Cell>();
     for (const room of rooms) {
@@ -42,11 +48,13 @@ export function Schedule({
       }
     }
     for (const b of bookings) {
+      const roomBase = baseByRoom.get(b.roomId);
+      if (!roomBase) continue;
       const bStart = new Date(b.startsAt).getTime();
       const bEnd = new Date(b.endsAt).getTime();
       for (let s = 0; s < SLOTS_PER_DAY; s++) {
-        const sStart = slotStart(s).getTime();
-        const sEnd = slotEnd(s).getTime();
+        const sStart = slotStart(s, roomBase).getTime();
+        const sEnd = slotEnd(s, roomBase).getTime();
         if (bStart < sEnd && bEnd > sStart && b.roomId) {
           const cell = grid.get(`${b.roomId}:${s}`);
           if (cell) cell.bookings.push(b);
@@ -54,7 +62,13 @@ export function Schedule({
       }
     }
     return grid;
-  }, [rooms, bookings]);
+  }, [rooms, bookings, baseByRoom]);
+
+  // Header labels use the first room's tz (concurrency view targets a single
+  // room+slot at a time, so a representative axis is fine).
+  const firstRoom = rooms[0];
+  const headerBase = firstRoom ? baseByRoom.get(firstRoom.id)! : null;
+  const headerTz = firstRoom?.timezone;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -69,7 +83,9 @@ export function Schedule({
                 key={`slot-h-${i}`}
                 className="border-b border-zinc-200 dark:border-zinc-800 px-1 py-2 text-center font-mono text-[11px] text-zinc-500 dark:text-zinc-500 min-w-[52px]"
               >
-                {formatSlotLabel(i)}
+                {headerBase && headerTz
+                  ? formatSlotLabel(i, headerBase, headerTz)
+                  : ""}
               </th>
             ))}
           </tr>
@@ -78,7 +94,12 @@ export function Schedule({
           {rooms.map((room) => (
             <tr key={room.id}>
               <td className="sticky left-0 z-10 bg-white dark:bg-black border-r border-zinc-200 dark:border-zinc-800 px-3 py-2 font-medium whitespace-nowrap">
-                {room.name}
+                <div className="flex flex-col">
+                  <span>{room.name}</span>
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    {room.timezone.split("/").pop()?.replace(/_/g, " ")}
+                  </span>
+                </div>
               </td>
               {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => {
                 const cell = cells.get(`${room.id}:${s}`);

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { Room, Doctor, BookingRow } from "@/lib/client";
-import { formatSlotLabel, slotIndexOf, SLOTS_PER_DAY, todayBase } from "@/lib/time";
+import type { BookingRow, Doctor, Room } from "@/lib/client";
+import { SLOTS_PER_DAY, formatSlotLabel, slotIndexOf, todayBase } from "@/lib/time";
 
 interface Props {
   rooms: Room[];
@@ -12,25 +12,44 @@ interface Props {
   onSlotClick: (roomId: number, slotIndex: number) => void;
 }
 
+interface RoomCol {
+  room: Room;
+  base: Date;
+  labels: string[];
+  bookingsBySlot: Map<number, BookingRow[]>;
+}
+
 export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlotClick }: Props) {
   const doctorMap = useMemo(() => new Map(doctors.map((d) => [d.id, d])), [doctors]);
-  const base = useMemo(() => todayBase(), []);
 
-  const bookingMap = useMemo(() => {
-    const map = new Map<string, BookingRow[]>();
-    for (const b of bookings) {
-      const si = slotIndexOf(b.startsAt, base);
-      if (si < 0 || si >= SLOTS_PER_DAY) continue;
-      const key = `${b.roomId}:${si}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(b);
-    }
-    return map;
-  }, [bookings, base]);
+  // Each room has its own timezone, so each column needs its own base instant,
+  // slot labels, and booking-by-slot map. Mismatching across rooms is fine —
+  // row N in column A is just "the Nth half-hour starting at 08:00 in A's tz".
+  const cols = useMemo<RoomCol[]>(() => {
+    return rooms.map((room) => {
+      const base = todayBase(room.timezone);
+      const labels = Array.from({ length: SLOTS_PER_DAY }, (_, i) =>
+        formatSlotLabel(i, base, room.timezone),
+      );
+      const bookingsBySlot = new Map<number, BookingRow[]>();
+      for (const b of bookings) {
+        if (b.roomId !== room.id) continue;
+        const si = slotIndexOf(b.startsAt, base);
+        if (si < 0 || si >= SLOTS_PER_DAY) continue;
+        const arr = bookingsBySlot.get(si) ?? [];
+        arr.push(b);
+        bookingsBySlot.set(si, arr);
+      }
+      return { room, base, labels, bookingsBySlot };
+    });
+  }, [rooms, bookings]);
 
   const slots = useMemo(() => Array.from({ length: SLOTS_PER_DAY }, (_, i) => i), []);
-
   const isHour = (si: number) => si % 2 === 0;
+
+  // Row header uses the first room's labels. If clinics span timezones we still
+  // show one time axis per row, with each column's local time inline (below).
+  const rowLabels = cols[0]?.labels ?? slots.map(() => "");
 
   return (
     <div
@@ -59,7 +78,7 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                   zIndex: 3,
                 }}
               />
-              {rooms.map((room) => (
+              {cols.map(({ room }) => (
                 <th
                   key={room.id}
                   style={{
@@ -79,7 +98,7 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                       display: "inline-flex",
                       flexDirection: "column",
                       alignItems: "center",
-                      gap: 2,
+                      gap: 4,
                     }}
                   >
                     <span
@@ -99,6 +118,22 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                       {room.id}
                     </span>
                     <span>{room.name.replace("Exam Room", "Exam")}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "#0F766E",
+                        background: "#F0FDFA",
+                        border: "1px solid #CCFBF1",
+                        borderRadius: 4,
+                        padding: "1px 6px",
+                        fontFamily: "ui-monospace, monospace",
+                        letterSpacing: "0.02em",
+                      }}
+                      title={room.timezone}
+                    >
+                      {room.timezone.split("/").pop()?.replace(/_/g, " ")}
+                    </span>
                   </div>
                 </th>
               ))}
@@ -140,12 +175,11 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {formatSlotLabel(si, base)}
+                      {rowLabels[si]}
                     </span>
                   </td>
-                  {rooms.map((room) => {
-                    const key = `${room.id}:${si}`;
-                    const cellBookings = bookingMap.get(key) ?? [];
+                  {cols.map(({ room, labels, bookingsBySlot }) => {
+                    const cellBookings = bookingsBySlot.get(si) ?? [];
                     const isBooked = cellBookings.length > 0;
                     const isSelected =
                       selectedSlot?.roomId === room.id &&
@@ -153,6 +187,10 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                     const doctor = isBooked
                       ? doctorMap.get(cellBookings[0].doctorId)
                       : undefined;
+                    // Show this column's local time only when it diverges from
+                    // the row label — keeps the grid quiet when clinics share a tz.
+                    const localLabel =
+                      labels[si] !== rowLabels[si] ? labels[si] : null;
 
                     return (
                       <td
@@ -160,10 +198,14 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
                         style={{ padding: "4px 6px", verticalAlign: "middle" }}
                       >
                         {isBooked && doctor ? (
-                          <BookedCell doctor={doctor} />
+                          <BookedCell
+                            doctor={doctor}
+                            localLabel={localLabel}
+                          />
                         ) : (
                           <AvailableCell
                             selected={isSelected}
+                            localLabel={localLabel}
                             onClick={() => onSlotClick(room.id, si)}
                           />
                         )}
@@ -180,7 +222,13 @@ export function BookingCalendar({ rooms, doctors, bookings, selectedSlot, onSlot
   );
 }
 
-function BookedCell({ doctor }: { doctor: Doctor }) {
+function BookedCell({
+  doctor,
+  localLabel,
+}: {
+  doctor: Doctor;
+  localLabel: string | null;
+}) {
   const bg = hexToRgba(doctor.color, 0.1);
   const border = hexToRgba(doctor.color, 0.25);
   const initials = doctor.name
@@ -230,19 +278,35 @@ function BookedCell({ doctor }: { doctor: Doctor }) {
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
+          flex: 1,
         }}
       >
         {doctor.name.replace("Dr. ", "")}
       </span>
+      {localLabel && (
+        <span
+          style={{
+            fontSize: 10,
+            fontFamily: "ui-monospace, monospace",
+            color: darkenHex(doctor.color),
+            opacity: 0.7,
+            flexShrink: 0,
+          }}
+        >
+          {localLabel}
+        </span>
+      )}
     </div>
   );
 }
 
 function AvailableCell({
   selected,
+  localLabel,
   onClick,
 }: {
   selected: boolean;
+  localLabel: string | null;
   onClick: () => void;
 }) {
   return (
@@ -260,6 +324,7 @@ function AvailableCell({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        gap: 6,
         color: selected ? "#0F766E" : "transparent",
         transition: "all 0.12s ease",
       }}
@@ -293,6 +358,17 @@ function AvailableCell({
         <line x1="12" y1="5" x2="12" y2="19" />
         <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
+      {localLabel && (
+        <span
+          style={{
+            fontSize: 10,
+            fontFamily: "ui-monospace, monospace",
+            fontWeight: 500,
+          }}
+        >
+          {localLabel}
+        </span>
+      )}
     </button>
   );
 }

@@ -3,6 +3,7 @@ import type { StrategyId } from "./strategies/types";
 export interface Room {
   id: number;
   name: string;
+  timezone: string;
 }
 
 export interface Doctor {

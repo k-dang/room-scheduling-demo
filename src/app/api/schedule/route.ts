@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const [rooms, doctors, bookings, bookingsExcl, runs] = await Promise.all([
-    sql`SELECT id, name FROM room_scheduling.rooms ORDER BY id`,
+    sql`SELECT id, name, timezone FROM room_scheduling.rooms ORDER BY id`,
     sql`SELECT id, name, color FROM room_scheduling.doctors ORDER BY id`,
     sql`SELECT id, room_id, doctor_id, starts_at, ends_at, strategy FROM room_scheduling.bookings ORDER BY id DESC LIMIT 1000`,
     sql`SELECT id, room_id, doctor_id, lower(during) AS starts_at, upper(during) AS ends_at, strategy FROM room_scheduling.bookings_excl ORDER BY id DESC LIMIT 1000`,

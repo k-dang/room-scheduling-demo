@@ -40,17 +40,21 @@ export default function ConcurrencyPage() {
     refresh();
   }, [refresh]);
 
-  const roomNameById = useMemo(
-    () => new Map((state?.rooms ?? []).map((r) => [r.id, r.name] as const)),
+  const roomById = useMemo(
+    () => new Map((state?.rooms ?? []).map((r) => [r.id, r] as const)),
     [state?.rooms],
   );
 
   const onRun = useCallback(async () => {
     if (!selected) return;
+    const room = roomById.get(selected.roomId);
+    if (!room) return;
     setRunning(true);
     setError(null);
     try {
-      const base = todayBase();
+      // Stress race targets the selected slot in the room's own timezone — the
+      // same wall-clock window that real bookings would land on.
+      const base = todayBase(room.timezone);
       const res = await postStress({
         strategy,
         roomId: selected.roomId,
@@ -65,7 +69,7 @@ export default function ConcurrencyPage() {
     } finally {
       setRunning(false);
     }
-  }, [selected, strategy, concurrency, refresh]);
+  }, [selected, strategy, concurrency, refresh, roomById]);
 
   const onReset = useCallback(async () => {
     setError(null);
@@ -148,7 +152,7 @@ export default function ConcurrencyPage() {
           concurrency={concurrency}
           setConcurrency={setConcurrency}
           selected={selected}
-          roomNameById={roomNameById}
+          roomById={roomById}
           running={running}
           onRun={onRun}
         />

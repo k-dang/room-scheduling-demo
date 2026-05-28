@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatInTimeZone } from "date-fns-tz";
 import type { Room, Doctor } from "@/lib/client";
-import { formatSlotLabel, slotEnd, todayBase } from "@/lib/time";
+import { formatSlotLabel, slotEnd, todayBase, tzAbbreviation } from "@/lib/time";
 
 interface Props {
   rooms: Room[];
@@ -37,14 +38,13 @@ export function BookingPanel({
   }, [selectedSlot]);
 
   const room = rooms.find((r) => r.id === selectedSlot.roomId);
-  const base = todayBase();
-  const startLabel = formatSlotLabel(selectedSlot.slotIndex, base);
+  // Room is the source of truth for the slot's wall-clock semantics.
+  const timeZone = room?.timezone ?? "UTC";
+  const base = todayBase(timeZone);
+  const startLabel = formatSlotLabel(selectedSlot.slotIndex, base, timeZone);
   const endTime = slotEnd(selectedSlot.slotIndex, base);
-  const endLabel = endTime.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const endLabel = formatInTimeZone(endTime, timeZone, "HH:mm");
+  const tzAbbr = room ? tzAbbreviation(timeZone, base) : "";
 
   const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId);
 
@@ -188,6 +188,20 @@ export function BookingPanel({
                 >
                   {startLabel} – {endLabel}
                 </span>
+                {tzAbbr && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontFamily: "ui-monospace, monospace",
+                      color: "#0F766E",
+                      opacity: 0.7,
+                      marginLeft: 2,
+                    }}
+                    title={timeZone}
+                  >
+                    {tzAbbr}
+                  </span>
+                )}
               </div>
             </div>
             <button

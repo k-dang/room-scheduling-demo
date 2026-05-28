@@ -1,8 +1,9 @@
 "use client";
 
+import type { Room } from "@/lib/client";
 import { STRATEGIES, STRATEGY_BY_ID } from "@/lib/strategies/descriptions";
 import type { StrategyId } from "@/lib/strategies/types";
-import { formatSlotLabel } from "@/lib/time";
+import { formatSlotLabel, todayBase } from "@/lib/time";
 
 interface Props {
   strategy: StrategyId;
@@ -10,7 +11,7 @@ interface Props {
   concurrency: number;
   setConcurrency(c: number): void;
   selected: { roomId: number; slotIndex: number } | null;
-  roomNameById: Map<number, string>;
+  roomById: Map<number, Room>;
   running: boolean;
   onRun(): void;
 }
@@ -38,12 +39,15 @@ export function RaceControl({
   concurrency,
   setConcurrency,
   selected,
-  roomNameById,
+  roomById,
   running,
   onRun,
 }: Props) {
   const meta = STRATEGY_BY_ID[strategy];
   const canRun = !!selected && !running;
+  const selectedRoom = selected ? roomById.get(selected.roomId) : undefined;
+  const selectedTz = selectedRoom?.timezone ?? "UTC";
+  const selectedBase = selectedRoom ? todayBase(selectedRoom.timezone) : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
@@ -115,11 +119,12 @@ export function RaceControl({
           <div className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
             Target slot
           </div>
-          {selected ? (
+          {selected && selectedRoom && selectedBase ? (
             <div className="rounded-md bg-zinc-100 dark:bg-zinc-900 px-3 py-2 font-mono text-sm">
-              {roomNameById.get(selected.roomId)} @{" "}
-              {formatSlotLabel(selected.slotIndex)}–
-              {formatSlotLabel(selected.slotIndex + 1)}
+              {selectedRoom.name} @{" "}
+              {formatSlotLabel(selected.slotIndex, selectedBase, selectedTz)}–
+              {formatSlotLabel(selected.slotIndex + 1, selectedBase, selectedTz)}{" "}
+              <span className="text-xs text-zinc-500">({selectedTz})</span>
             </div>
           ) : (
             <div className="rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm text-zinc-500">
